@@ -499,7 +499,7 @@ No heavy frameworks. No bundler required. Pure Node.js + vanilla JS/HTML/CSS.
 
 ## 🌟 Developed By
 
-This project is developed and maintained by **NaharSoft**. Check out my other applications and website:
+This project is developed and maintained by **ShamsSayied**. Check out my other applications and website:
 - 🌐 [NaharSoft Official Website](https://naharsoft.com/)
 - 📱 [NaharSoft Apps on Google Play Store](https://play.google.com/store/apps/developer?id=NaharSoft)
 
