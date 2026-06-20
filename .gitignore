@@ -1,0 +1,32 @@
+# Dependency directories
+node_modules/
+
+# Local databases and runtime configuration (Do not push to GitHub)
+downloads.json
+settings.json
+
+# Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+ENV/
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Operating System files
+Thumbs.db
+db.ini
+.DS_Store
+
+# IDE and AI agent directories
+.gemini/
+.agents/
+.vscode/
+.idea/
