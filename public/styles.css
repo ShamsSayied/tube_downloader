@@ -351,6 +351,44 @@ body {
   cursor: not-allowed;
 }
 
+/* Sidebar Footer Links */
+.sys-links-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.sys-link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-decoration: none;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.sys-link:hover {
+  color: var(--accent-1);
+  border-color: var(--accent-1);
+  background: var(--accent-glow);
+}
+.sys-link svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: all var(--transition);
+}
+.sys-link:hover svg {
+  color: var(--accent-1);
+}
+
 /* Mini update log panel in sidebar */
 .sys-update-log {
   background: var(--update-log-bg, rgba(0,0,0,0.55));
