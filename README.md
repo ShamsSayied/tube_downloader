@@ -12,7 +12,7 @@
   <img alt="FFmpeg" src="https://img.shields.io/badge/FFmpeg-required-007808?logo=ffmpeg&logoColor=white&style=flat-square">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white&style=flat-square">
-  <img alt="Stars" src="https://img.shields.io/github/stars/YOUR_USERNAME/tube-downloader?style=flat-square&color=f1c40f">
+  <img alt="Stars" src="https://img.shields.io/github/stars/ShamsSayied/tube_downloader?style=flat-square&color=f1c40f">
 </p>
 
 <br/>
@@ -127,7 +127,7 @@ Live terminal output is streamed directly to the UI while the update runs.
 ## 🏗️ Architecture Overview
 
 ```
-tube-downloader/
+tube_downloader/
 ├── server.js           ← Express + WebSocket server, yt-dlp process manager
 ├── package.json        ← Node.js dependencies
 ├── downloads.json      ← Persistent download history (auto-created)
@@ -184,8 +184,8 @@ server.js ──>  spawn(python -m yt_dlp ...) ──>  Downloads folder
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tube-downloader.git
-cd tube-downloader
+git clone https://github.com/ShamsSayied/tube_downloader.git
+cd tube_downloader
 ```
 
 ### 2. Install Node.js dependencies
@@ -515,6 +515,6 @@ This project is licensed under the **MIT License**.
 
 Made with ❤️ for power users who want full control over their media downloads.
 
-**[Report Bug](https://github.com/YOUR_USERNAME/tube-downloader/issues)** · **[Request Feature](https://github.com/YOUR_USERNAME/tube-downloader/issues)** · **[Discussions](https://github.com/YOUR_USERNAME/tube-downloader/discussions)**
+**[Report Bug](https://github.com/ShamsSayied/tube_downloader/issues)** · **[Request Feature](https://github.com/ShamsSayied/tube_downloader/issues)** · **[Discussions](https://github.com/ShamsSayied/tube_downloader/discussions)**
 
 </div>
