@@ -35,6 +35,26 @@ function formatDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatSecondsToHHMMSS(totalSeconds) {
+  if (isNaN(totalSeconds) || totalSeconds < 0) return '00:00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function parseHHMMSSToSeconds(str) {
+  if (!str || typeof str !== 'string') return 0;
+  const clean = str.replace('*', '').trim();
+  if (!clean) return 0;
+  const parts = clean.split(':').map(Number);
+  if (parts.some(isNaN)) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 1) return parts[0];
+  return 0;
+}
+
 // ─── Toast ────────────────────────────────────────────────────
 
 function toast(message, type = 'info', duration = 3500) {
@@ -315,21 +335,28 @@ function buildActiveCard(dl) {
 }
 
 function activeCardHTML(dl) {
-  const statusMap = {
-    downloading: 'Downloading',
-    queued: 'Queued',
-    paused: 'Paused',
-    merging: 'Merging',
-    processing: 'Processing',
-    extracting: 'Extracting',
-    failed: 'Failed'
-  };
-  const statusLabel = statusMap[dl.status] || dl.status;
+  const isCutting = dl.speed && dl.speed.includes('(Cutting)');
+  const isProcessing = ['merging', 'processing', 'extracting'].includes(dl.status) || isCutting;
+  
+  let statusLabel = 'Downloading';
+  if (dl.status === 'queued') statusLabel = 'Queued';
+  if (dl.status === 'paused') statusLabel = 'Paused';
+  if (dl.status === 'failed') statusLabel = 'Failed';
+  if (dl.status === 'merging') statusLabel = 'Merging Streams';
+  if (dl.status === 'extracting') statusLabel = 'Extracting Audio';
+  if (dl.status === 'processing' || isCutting) statusLabel = 'Cutting Section';
+
   const canPause = dl.status === 'downloading' || dl.status === 'queued';
   const canResume = dl.status === 'paused';
   const canRetry = dl.status === 'failed';
   const pct = Math.min(100, dl.progress || 0).toFixed(1);
-  const isAnimated = dl.status === 'downloading' || dl.status === 'merging' || dl.status === 'processing';
+  const isAnimated = dl.status === 'downloading' || isProcessing;
+
+  let processingMsg = 'Processing media... Please wait.';
+  if (isCutting) processingMsg = 'Clipping video section with FFmpeg... Please wait.';
+  else if (dl.status === 'merging') processingMsg = 'Merging audio & video streams into high quality container...';
+  else if (dl.status === 'extracting') processingMsg = 'Extracting and converting audio track...';
+  else if (dl.status === 'processing') processingMsg = 'Finalizing media metadata & chapter structures...';
 
   return `
     <div class="download-card-header">
@@ -337,7 +364,7 @@ function activeCardHTML(dl) {
       <div class="download-meta">
         <div class="download-title" title="${escapeHtml(dl.title)}">${escapeHtml(dl.title)}</div>
         <div class="download-status-row">
-          <span class="status-chip ${dl.status}">${statusLabel}</span>
+          <span class="status-chip ${dl.status} ${isCutting ? 'processing' : ''}">${statusLabel}</span>
           <span class="download-speed-text" id="speed-${dl.id}">${dl.status === 'paused' ? 'Paused' : (dl.speed || '—')}</span>
           <span class="download-eta-text" id="eta-${dl.id}">${dl.eta && dl.eta !== '--:--' ? 'ETA ' + dl.eta : ''}</span>
           <span class="download-size-text" id="size-${dl.id}">${dl.totalSize || ''}</span>
@@ -359,10 +386,19 @@ function activeCardHTML(dl) {
         </button>
       </div>
     </div>
-    <div class="progress-wrap">
-      <div class="progress-fill ${isAnimated ? 'animated' : ''}" id="prog-${dl.id}" style="width:${pct}%"></div>
-      <div class="progress-percent" id="progpct-${dl.id}">${pct}%</div>
+
+    <div class="progress-container-row">
+      <div class="progress-wrap">
+        <div class="progress-fill ${isAnimated ? 'animated' : ''}" id="prog-${dl.id}" style="width:${pct}%"></div>
+      </div>
+      <div class="progress-percent-badge" id="progpct-${dl.id}">${pct}%</div>
     </div>
+
+    <div class="processing-banner" id="pban-${dl.id}" style="display:${isProcessing ? 'flex' : 'none'}">
+      <div class="processing-spinner"></div>
+      <span id="pmsg-${dl.id}">${processingMsg}</span>
+    </div>
+
     <canvas class="speed-graph" id="graph-${dl.id}"></canvas>
   `;
 }
@@ -384,10 +420,16 @@ function updateActiveCard(dl) {
   const card = qs(`#card-${dl.id}`);
   if (!card) { addOrUpdateActiveCard(dl); return; }
 
+  const isCutting = dl.speed && dl.speed.includes('(Cutting)');
+  const isProcessing = ['merging', 'processing', 'extracting'].includes(dl.status) || isCutting;
+
   const prog = qs(`#prog-${dl.id}`);
   const progPct = qs(`#progpct-${dl.id}`);
   const pct = Math.min(100, dl.progress || 0).toFixed(1);
-  if (prog) { prog.style.width = pct + '%'; prog.className = `progress-fill ${(dl.status === 'downloading' || dl.status === 'merging') ? 'animated' : ''}`; }
+  if (prog) {
+    prog.style.width = pct + '%';
+    prog.className = `progress-fill ${(dl.status === 'downloading' || isProcessing) ? 'animated' : ''}`;
+  }
   if (progPct) progPct.textContent = pct + '%';
 
   const speedEl = qs(`#speed-${dl.id}`);
@@ -398,8 +440,32 @@ function updateActiveCard(dl) {
   if (sizeEl) sizeEl.textContent = dl.totalSize || '';
 
   const chip = card.querySelector('.status-chip');
-  const statusMap = { downloading: 'Downloading', queued: 'Queued', paused: 'Paused', merging: 'Merging', processing: 'Processing', extracting: 'Extracting', failed: 'Failed' };
-  if (chip) { chip.className = `status-chip ${dl.status}`; chip.textContent = statusMap[dl.status] || dl.status; }
+  let statusLabel = 'Downloading';
+  if (dl.status === 'queued') statusLabel = 'Queued';
+  if (dl.status === 'paused') statusLabel = 'Paused';
+  if (dl.status === 'failed') statusLabel = 'Failed';
+  if (dl.status === 'merging') statusLabel = 'Merging Streams';
+  if (dl.status === 'extracting') statusLabel = 'Extracting Audio';
+  if (dl.status === 'processing' || isCutting) statusLabel = 'Cutting Section';
+
+  if (chip) {
+    chip.className = `status-chip ${dl.status} ${isCutting ? 'processing' : ''}`;
+    chip.textContent = statusLabel;
+  }
+
+  const pban = qs(`#pban-${dl.id}`);
+  const pmsg = qs(`#pmsg-${dl.id}`);
+  if (pban) {
+    pban.style.display = isProcessing ? 'flex' : 'none';
+  }
+  if (pmsg && isProcessing) {
+    let msg = 'Processing media... Please wait.';
+    if (isCutting) msg = 'Clipping video section with FFmpeg... Please wait.';
+    else if (dl.status === 'merging') msg = 'Merging audio & video streams into high quality container...';
+    else if (dl.status === 'extracting') msg = 'Extracting and converting audio track...';
+    else if (dl.status === 'processing') msg = 'Finalizing media metadata & chapter structures...';
+    pmsg.textContent = msg;
+  }
 
   if (speedTrackers[dl.id] && dl.status === 'downloading') {
     speedTrackers[dl.id].addPoint(dl.speed);
@@ -542,6 +608,172 @@ function renderDashboardActive() {
   }).join('');
 }
 
+// ─── Time Clipper Controller ──────────────────────────────────
+
+let timeClipperState = {
+  duration: 0,
+  start: 0,
+  end: 0
+};
+
+function initTimeClipper(durationSec) {
+  const maxSec = durationSec > 0 ? durationSec : 3600;
+  timeClipperState = {
+    duration: maxSec,
+    start: 0,
+    end: maxSec
+  };
+
+  const rangeStart = qs('#tcRangeStart');
+  const rangeEnd = qs('#tcRangeEnd');
+
+  if (rangeStart && rangeEnd) {
+    rangeStart.min = 0;
+    rangeStart.max = maxSec;
+    rangeStart.value = 0;
+
+    rangeEnd.min = 0;
+    rangeEnd.max = maxSec;
+    rangeEnd.value = maxSec;
+  }
+
+  qsa('.tc-preset-btn').forEach(b => b.classList.remove('active'));
+  const fullBtn = qs('.tc-preset-btn[data-tcpreset="full"]');
+  if (fullBtn) fullBtn.classList.add('active');
+
+  updateTimeClipperUI();
+}
+
+function updateTimeClipperUI(fromInput = false) {
+  const rangeStart = qs('#tcRangeStart');
+  const rangeEnd = qs('#tcRangeEnd');
+  const trackFill = qs('#tcTrackFill');
+  const badgeStart = qs('#tcBadgeStart');
+  const badgeEnd = qs('#tcBadgeEnd');
+  const badgeDur = qs('#tcBadgeDuration');
+  const timeStart = qs('#tcTimeStart');
+  const timeEnd = qs('#tcTimeEnd');
+  const dlSections = qs('#dlSections');
+
+  if (!rangeStart || !rangeEnd) return;
+
+  let start = parseInt(rangeStart.value) || 0;
+  let end = parseInt(rangeEnd.value) || 0;
+  const max = timeClipperState.duration;
+
+  if (start > end) {
+    if (document.activeElement === rangeStart) {
+      start = end;
+      rangeStart.value = start;
+    } else {
+      end = start;
+      rangeEnd.value = end;
+    }
+  }
+
+  timeClipperState.start = start;
+  timeClipperState.end = end;
+
+  const leftPct = max > 0 ? (start / max) * 100 : 0;
+  const widthPct = max > 0 ? ((end - start) / max) * 100 : 100;
+
+  if (trackFill) {
+    trackFill.style.left = leftPct + '%';
+    trackFill.style.width = widthPct + '%';
+  }
+
+  const startStr = formatSecondsToHHMMSS(start);
+  const endStr = formatSecondsToHHMMSS(end);
+  const diffSec = end - start;
+
+  if (badgeStart) badgeStart.textContent = `Start: ${startStr}`;
+  if (badgeEnd) badgeEnd.textContent = `End: ${endStr}`;
+
+  if (badgeDur) {
+    if (diffSec === max && start === 0) {
+      badgeDur.textContent = 'Clip: Full Video';
+    } else {
+      const m = Math.floor(diffSec / 60);
+      const s = diffSec % 60;
+      badgeDur.textContent = `Clip: ${m > 0 ? m + 'm ' : ''}${s}s`;
+    }
+  }
+
+  if (!fromInput) {
+    if (timeStart) timeStart.value = startStr;
+    if (timeEnd) timeEnd.value = endStr;
+  }
+
+  if (dlSections) {
+    if (start === 0 && end === max) {
+      dlSections.value = '';
+    } else {
+      dlSections.value = `*${startStr}-${endStr}`;
+    }
+  }
+}
+
+// Setup Time Clipper event listeners
+function setupTimeClipperEvents() {
+  const rangeStart = qs('#tcRangeStart');
+  const rangeEnd = qs('#tcRangeEnd');
+  const timeStart = qs('#tcTimeStart');
+  const timeEnd = qs('#tcTimeEnd');
+
+  if (rangeStart) rangeStart.addEventListener('input', () => {
+    qsa('.tc-preset-btn').forEach(b => b.classList.remove('active'));
+    updateTimeClipperUI();
+  });
+  if (rangeEnd) rangeEnd.addEventListener('input', () => {
+    qsa('.tc-preset-btn').forEach(b => b.classList.remove('active'));
+    updateTimeClipperUI();
+  });
+
+  if (timeStart) timeStart.addEventListener('change', () => {
+    const sec = parseHHMMSSToSeconds(timeStart.value);
+    if (rangeStart) rangeStart.value = Math.min(sec, timeClipperState.end);
+    qsa('.tc-preset-btn').forEach(b => b.classList.remove('active'));
+    updateTimeClipperUI();
+  });
+
+  if (timeEnd) timeEnd.addEventListener('change', () => {
+    const sec = parseHHMMSSToSeconds(timeEnd.value);
+    if (rangeEnd) rangeEnd.value = Math.max(sec, timeClipperState.start);
+    qsa('.tc-preset-btn').forEach(b => b.classList.remove('active'));
+    updateTimeClipperUI();
+  });
+
+  // Preset buttons
+  qsa('.tc-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      qsa('.tc-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const preset = btn.dataset.tcpreset;
+      const max = timeClipperState.duration;
+      const rStart = qs('#tcRangeStart');
+      const rEnd = qs('#tcRangeEnd');
+
+      if (!rStart || !rEnd) return;
+
+      if (preset === 'full') {
+        rStart.value = 0;
+        rEnd.value = max;
+      } else if (preset === 'first30') {
+        rStart.value = 0;
+        rEnd.value = Math.min(30, max);
+      } else if (preset === 'first60') {
+        rStart.value = 0;
+        rEnd.value = Math.min(60, max);
+      } else if (preset === 'first300') {
+        rStart.value = 0;
+        rEnd.value = Math.min(300, max);
+      }
+      updateTimeClipperUI();
+    });
+  });
+}
+
 // ─── Download Config Modal ────────────────────────────────────
 
 function openAnalyzeModal(data) {
@@ -588,7 +820,10 @@ function openAnalyzeModal(data) {
   if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = '';
   if (qs('#dlNoPlaylist')) qs('#dlNoPlaylist').checked = false;
   if (qs('#dlPlaylistRandom')) qs('#dlPlaylistRandom').checked = false;
-  if (qs('#dlSections')) qs('#dlSections').value = '';
+  
+  const durSec = data.durationSeconds || parseHHMMSSToSeconds(data.duration) || 0;
+  initTimeClipper(durSec);
+
   if (qs('#dlOutputTemplate')) qs('#dlOutputTemplate').value = s.outputTemplate || '';
   if (qs('#dlArchive')) qs('#dlArchive').value = '';
   if (qs('#dlDateAfter')) qs('#dlDateAfter').value = '';
@@ -1078,6 +1313,7 @@ document.addEventListener('click', (e) => {
 
 async function init() {
   setupIPCListeners();
+  setupTimeClipperEvents();
   loadSysInfo();
   navigateTo('dashboard');
 

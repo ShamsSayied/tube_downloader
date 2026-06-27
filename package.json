@@ -8,8 +8,8 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "postinstall": "node scripts/download-binaries.js",
-    "build": "electron-builder --win zip nsis portable",
-    "build:zip": "electron-builder --win zip",
+    "build": "electron-builder --win zip nsis portable && node scripts/rename-builds.js",
+    "build:zip": "electron-builder --win zip && node scripts/rename-builds.js",
     "build:portable": "electron-builder --win portable",
     "build:nsis": "electron-builder --win nsis"
   },
@@ -48,10 +48,11 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "public/icon.ico",
       "uninstallerIcon": "public/icon.ico",
-      "installerHeaderIcon": "public/icon.ico"
+      "installerHeaderIcon": "public/icon.ico",
+      "artifactName": "TubeDownloader-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "TubeDownloader-Portable-${version}.${ext}"
+      "artifactName": "TubeDownloader-Standalone-${version}.${ext}"
     }
   }
 }

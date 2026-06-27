@@ -472,10 +472,20 @@ function startYtDlpProcess(id) {
   });
 
   child.stderr.on('data', (data) => {
-    const errLine = data.toString().trim();
+    const str = data.toString();
+    const errLine = str.trim();
     if (errLine.startsWith('ERROR:')) {
       dl.error = errLine;
       console.error(`yt-dlp error [${id}]:`, errLine);
+    }
+    // Parse FFmpeg clip cutting progress from stderr (e.g., size= 768KiB time=00:00:06.39 speed=1.55x)
+    if (str.includes('frame=') || str.includes('size=')) {
+      const speedMatch = str.match(/speed=\s*([^\s]+)/);
+      const sizeMatch = str.match(/size=\s*([^\s]+)/);
+      if (speedMatch && speedMatch[1]) dl.speed = `${speedMatch[1]} (Cutting)`;
+      if (sizeMatch && sizeMatch[1]) dl.totalSize = sizeMatch[1];
+      if (dl.status === 'queued') dl.status = 'downloading';
+      throttleBroadcast(id);
     }
   });
 
@@ -639,6 +649,7 @@ function setupIPC() {
             thumbnail: info.thumbnail || (info.thumbnails && info.thumbnails.length ? info.thumbnails[info.thumbnails.length - 1].url : ''),
             channel: info.uploader || info.channel || info.uploader_id || 'Unknown',
             duration: durationStr,
+            durationSeconds: Math.floor(info.duration || 0),
             views: info.view_count ? info.view_count.toLocaleString() : 'N/A',
             likes: info.like_count ? info.like_count.toLocaleString() : 'N/A',
             uploadDate: info.upload_date || '',

@@ -822,10 +822,54 @@
 
       <!-- Tab: Advanced -->
       <div class="modal-tab-panel" id="mtabAdvanced">
+        <!-- Interactive Visual Time Range Selector Widget -->
+        <div class="time-clipper-card" id="timeClipperCard">
+          <div class="time-clipper-header">
+            <span class="time-clipper-title">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Interactive Time Clipper / Range Selector
+            </span>
+            <div class="time-clipper-badges">
+              <span class="tc-badge" id="tcBadgeStart">Start: 00:00:00</span>
+              <span class="tc-badge" id="tcBadgeEnd">End: 00:00:00</span>
+              <span class="tc-badge accent" id="tcBadgeDuration">Clip: Full</span>
+            </div>
+          </div>
+
+          <!-- Quick Presets -->
+          <div class="tc-presets">
+            <button type="button" class="tc-preset-btn active" data-tcpreset="full">Full Video</button>
+            <button type="button" class="tc-preset-btn" data-tcpreset="first30">First 30s</button>
+            <button type="button" class="tc-preset-btn" data-tcpreset="first60">First 1m</button>
+            <button type="button" class="tc-preset-btn" data-tcpreset="first300">First 5m</button>
+          </div>
+
+          <!-- Dual Slider Track -->
+          <div class="tc-slider-wrap">
+            <div class="tc-track-bg"></div>
+            <div class="tc-track-fill" id="tcTrackFill"></div>
+            <input type="range" id="tcRangeStart" min="0" max="100" value="0" step="1" class="tc-range-input">
+            <input type="range" id="tcRangeEnd" min="0" max="100" value="100" step="1" class="tc-range-input">
+          </div>
+
+          <!-- Precise Time Inputs -->
+          <div class="tc-inputs-row">
+            <div class="tc-input-group">
+              <label for="tcTimeStart">Start Time (HH:MM:SS)</label>
+              <input type="text" id="tcTimeStart" class="form-control mini" value="00:00:00" placeholder="00:00:00">
+            </div>
+            <div class="tc-input-sep">➔</div>
+            <div class="tc-input-group">
+              <label for="tcTimeEnd">End Time (HH:MM:SS)</label>
+              <input type="text" id="tcTimeEnd" class="form-control mini" value="00:00:00" placeholder="00:00:00">
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
-          <label class="form-label" for="dlSections">Download Sections / Time Range</label>
+          <label class="form-label" for="dlSections">yt-dlp Section Parameter Output</label>
           <input type="text" id="dlSections" class="form-control" placeholder="*10:00-20:00 or *30:00-inf or chapter-name">
-          <span class="form-hint">Use * prefix for time ranges (HH:MM:SS). Separate multiple with commas.</span>
+          <span class="form-hint">Auto-synced with slider above. Use * prefix for time ranges (e.g. *00:01:00-00:05:00). Separate multiple with commas.</span>
         </div>
         <div class="form-row">
           <div class="form-group">
