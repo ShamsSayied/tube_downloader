@@ -30,3 +30,9 @@ db.ini
 .agents/
 .vscode/
 .idea/
+
+# Electron build output
+dist/
+
+# Downloaded binaries (fetched at build time)
+bin/

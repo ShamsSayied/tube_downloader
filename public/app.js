@@ -1,27 +1,17 @@
 /**
- * Tube Downloader — Full SPA Frontend
- * Handles: WebSocket, SPA routing, download modal (4 tabs), settings (7 tabs),
+ * Tube Downloader — Electron Desktop App Frontend
+ * Handles: IPC communication, SPA routing, download modal (4 tabs), settings (7 tabs),
  * speed graphs, toast notifications, theme switching, and all yt-dlp options.
+ *
+ * Replaces the old WebSocket + fetch() architecture with Electron IPC via window.electronAPI.
  */
 
 'use strict';
 
 // ─── Constants & State ────────────────────────────────────────
 
-const WS_URL = `ws://${location.host}/ws`;
-const API = {
-  analyze: '/api/analyze',
-  download: '/api/download',
-  action: '/api/action',
-  open: '/api/open',
-  settings: '/api/settings',
-  sysinfo: '/api/sysinfo',
-  history: '/api/history',
-  update: '/api/update-ytdlp',
-};
+const api = window.electronAPI;
 
-let ws = null;
-let wsReconnectTimer = null;
 let appState = {
   active: [],
   completed: [],
@@ -128,33 +118,83 @@ class SpeedTracker {
   }
 }
 
-// ─── WebSocket Connection ─────────────────────────────────────
+// ─── IPC Event Listeners (Main → Renderer) ────────────────────
 
-function connectWS() {
-  clearTimeout(wsReconnectTimer);
-
-  ws = new WebSocket(WS_URL);
-
-  ws.addEventListener('open', () => {
-    setConnStatus(true);
+function setupIPCListeners() {
+  api.onInitData((data) => {
+    appState.active = data.active || [];
+    appState.completed = data.completed || [];
+    if (data.settings) { appState.settings = data.settings; applySettings(data.settings); }
+    renderActiveDownloads();
+    renderCompletedDownloads();
+    updateStats();
   });
 
-  ws.addEventListener('message', (e) => {
-    try {
-      handleWSMessage(JSON.parse(e.data));
-    } catch (err) {
-      console.error('WS parse error:', err);
+  api.onDownloadAdded((download) => {
+    if (download) {
+      appState.active = appState.active.filter(d => d.id !== download.id);
+      appState.active.unshift(download);
+      addOrUpdateActiveCard(download);
+      updateStats();
+      navigateTo('downloads');
     }
   });
 
-  ws.addEventListener('close', () => {
-    setConnStatus(false);
-    wsReconnectTimer = setTimeout(connectWS, 3000);
+  api.onDownloadUpdate((download) => {
+    if (download) {
+      const idx = appState.active.findIndex(d => d.id === download.id);
+      if (idx !== -1) appState.active[idx] = download;
+      else appState.active.unshift(download);
+      updateActiveCard(download);
+      updateStats();
+    }
   });
 
-  ws.addEventListener('error', () => {
-    ws.close();
+  api.onDownloadCompleted((data) => {
+    appState.active = appState.active.filter(d => d.id !== data.activeId);
+    if (data.download) appState.completed.unshift(data.download);
+    removeActiveCard(data.activeId);
+    addCompletedCard(data.download);
+    updateStats();
+    toast(`✅ "${escapeHtml(data.download.title.substring(0, 50))}" downloaded!`, 'success');
   });
+
+  api.onDownloadFailed((download) => {
+    if (download) {
+      const idx = appState.active.findIndex(d => d.id === download.id);
+      if (idx !== -1) appState.active[idx] = download;
+      updateActiveCard(download);
+      toast(`❌ Download failed: ${escapeHtml((download.error || 'Unknown error').substring(0, 80))}`, 'error', 5000);
+    }
+  });
+
+  api.onDownloadRemoved((data) => {
+    appState.active = appState.active.filter(d => d.id !== data.id);
+    removeActiveCard(data.id);
+    updateStats();
+  });
+
+  api.onCompletedRemoved((data) => {
+    appState.completed = appState.completed.filter(d => d.id !== data.id);
+    removeCompletedCard(data.id);
+    updateStats();
+  });
+
+  api.onSettingsChanged((newSettings) => {
+    if (newSettings) { appState.settings = newSettings; applySettings(newSettings); }
+  });
+
+  api.onWindowMaximized((maximized) => {
+    const maxBtn = qs('#titlebarMaxBtn');
+    if (maxBtn) {
+      maxBtn.innerHTML = maximized
+        ? '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="1"/><path d="M9 1h12a2 2 0 0 1 2 2v12"/></svg>'
+        : '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>';
+    }
+  });
+
+  // Connection status: always connected in Electron
+  setConnStatus(true);
 }
 
 function setConnStatus(online) {
@@ -162,81 +202,12 @@ function setConnStatus(online) {
   const dot = qs('#mobileConnDot');
   if (online) {
     status.className = 'conn-status connected';
-    qs('#connText').textContent = 'Connected';
+    qs('#connText').textContent = 'Ready';
     if (dot) { dot.className = 'mobile-conn-dot connected'; }
   } else {
     status.className = 'conn-status disconnected';
-    qs('#connText').textContent = 'Reconnecting...';
+    qs('#connText').textContent = 'Error';
     if (dot) { dot.className = 'mobile-conn-dot'; }
-  }
-}
-
-function handleWSMessage(msg) {
-  switch (msg.type) {
-    case 'init':
-      appState.active = msg.active || [];
-      appState.completed = msg.completed || [];
-      if (msg.settings) { appState.settings = msg.settings; applySettings(msg.settings); }
-      renderActiveDownloads();
-      renderCompletedDownloads();
-      updateStats();
-      break;
-
-    case 'added':
-      if (msg.download) {
-        // Remove if already present then re-add
-        appState.active = appState.active.filter(d => d.id !== msg.download.id);
-        appState.active.unshift(msg.download);
-        addOrUpdateActiveCard(msg.download);
-        updateStats();
-        // Navigate to downloads page
-        navigateTo('downloads');
-      }
-      break;
-
-    case 'update':
-      if (msg.download) {
-        const idx = appState.active.findIndex(d => d.id === msg.download.id);
-        if (idx !== -1) appState.active[idx] = msg.download;
-        else appState.active.unshift(msg.download);
-        updateActiveCard(msg.download);
-        updateStats();
-      }
-      break;
-
-    case 'completed':
-      appState.active = appState.active.filter(d => d.id !== msg.activeId);
-      if (msg.download) appState.completed.unshift(msg.download);
-      removeActiveCard(msg.activeId);
-      addCompletedCard(msg.download);
-      updateStats();
-      toast(`✅ "${escapeHtml(msg.download.title.substring(0, 50))}" downloaded!`, 'success');
-      break;
-
-    case 'failed':
-      if (msg.download) {
-        const idx = appState.active.findIndex(d => d.id === msg.download.id);
-        if (idx !== -1) appState.active[idx] = msg.download;
-        updateActiveCard(msg.download);
-        toast(`❌ Download failed: ${escapeHtml((msg.download.error || 'Unknown error').substring(0, 80))}`, 'error', 5000);
-      }
-      break;
-
-    case 'removed':
-      appState.active = appState.active.filter(d => d.id !== msg.id);
-      removeActiveCard(msg.id);
-      updateStats();
-      break;
-
-    case 'completed_removed':
-      appState.completed = appState.completed.filter(d => d.id !== msg.id);
-      removeCompletedCard(msg.id);
-      updateStats();
-      break;
-
-    case 'settings':
-      if (msg.settings) { appState.settings = msg.settings; applySettings(msg.settings); }
-      break;
   }
 }
 
@@ -280,7 +251,7 @@ function updateStats() {
   qs('#activeEmpty').style.display = activeCount === 0 ? '' : 'none';
   qs('#completedEmpty').style.display = completedCount === 0 ? '' : 'none';
 
-  // Dashboard recent
+  // Dashboard
   renderDashboardRecent();
   renderDashboardActive();
 }
@@ -297,7 +268,6 @@ function navigateTo(page) {
   if (targetPage) targetPage.classList.add('active');
   if (targetNav) targetNav.classList.add('active');
 
-  // Close mobile sidebar
   closeMobileSidebar();
 }
 
@@ -355,7 +325,6 @@ function activeCardHTML(dl) {
     failed: 'Failed'
   };
   const statusLabel = statusMap[dl.status] || dl.status;
-  const isPaused = dl.status === 'paused';
   const canPause = dl.status === 'downloading' || dl.status === 'queued';
   const canResume = dl.status === 'paused';
   const canRetry = dl.status === 'failed';
@@ -415,14 +384,12 @@ function updateActiveCard(dl) {
   const card = qs(`#card-${dl.id}`);
   if (!card) { addOrUpdateActiveCard(dl); return; }
 
-  // Update progress
   const prog = qs(`#prog-${dl.id}`);
   const progPct = qs(`#progpct-${dl.id}`);
   const pct = Math.min(100, dl.progress || 0).toFixed(1);
   if (prog) { prog.style.width = pct + '%'; prog.className = `progress-fill ${(dl.status === 'downloading' || dl.status === 'merging') ? 'animated' : ''}`; }
   if (progPct) progPct.textContent = pct + '%';
 
-  // Update speed/eta/size
   const speedEl = qs(`#speed-${dl.id}`);
   const etaEl = qs(`#eta-${dl.id}`);
   const sizeEl = qs(`#size-${dl.id}`);
@@ -430,12 +397,10 @@ function updateActiveCard(dl) {
   if (etaEl) etaEl.textContent = dl.eta && dl.eta !== '--:--' ? 'ETA ' + dl.eta : '';
   if (sizeEl) sizeEl.textContent = dl.totalSize || '';
 
-  // Update status chip
   const chip = card.querySelector('.status-chip');
   const statusMap = { downloading: 'Downloading', queued: 'Queued', paused: 'Paused', merging: 'Merging', processing: 'Processing', extracting: 'Extracting', failed: 'Failed' };
   if (chip) { chip.className = `status-chip ${dl.status}`; chip.textContent = statusMap[dl.status] || dl.status; }
 
-  // Update speed graph
   if (speedTrackers[dl.id] && dl.status === 'downloading') {
     speedTrackers[dl.id].addPoint(dl.speed);
   }
@@ -582,7 +547,6 @@ function renderDashboardActive() {
 function openAnalyzeModal(data) {
   currentAnalyzeResult = data;
 
-  // Fill preview
   qs('#prevThumb').src = data.thumbnail || '';
   qs('#prevTitle').textContent = data.title || 'Unknown';
   qs('#prevChannel').textContent = data.channel || '';
@@ -592,10 +556,8 @@ function openAnalyzeModal(data) {
   qs('#prevChapters').textContent = data.hasChapters ? `📚 ${data.chaptersCount} chapters` : '';
   qs('#prevSubs').textContent = data.availableSubs && data.availableSubs.length ? `🌐 ${data.availableSubs.length} subtitle tracks` : '';
 
-  // Set modal title
   qs('#modalTitle').textContent = data.type === 'playlist' ? 'Configure Playlist Download' : 'Configure Download';
 
-  // Populate formats
   const formatSel = qs('#dlFormat');
   formatSel.innerHTML = '';
   const formats = data.type === 'playlist'
@@ -614,26 +576,18 @@ function openAnalyzeModal(data) {
     formatSel.appendChild(opt);
   });
 
-  // Audio format group visibility
+  formatSel.removeEventListener('change', updateFormatUI);
   formatSel.addEventListener('change', updateFormatUI);
   updateFormatUI();
 
-  // Show/hide playlist options
   qs('#playlistOptionsGroup').style.display = data.type === 'playlist' ? '' : 'none';
-
-  // Pre-fill path with settings default
   qs('#dlPath').value = appState.settings.downloadPath || '';
 
-  // Pre-fill advanced options with global settings
   const s = appState.settings || {};
-  
-  // Basic
   if (qs('#dlAudioFmt')) qs('#dlAudioFmt').value = s.audioFormat || 'mp3';
   if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = '';
   if (qs('#dlNoPlaylist')) qs('#dlNoPlaylist').checked = false;
   if (qs('#dlPlaylistRandom')) qs('#dlPlaylistRandom').checked = false;
-
-  // Advanced
   if (qs('#dlSections')) qs('#dlSections').value = '';
   if (qs('#dlOutputTemplate')) qs('#dlOutputTemplate').value = s.outputTemplate || '';
   if (qs('#dlArchive')) qs('#dlArchive').value = '';
@@ -644,14 +598,10 @@ function openAnalyzeModal(data) {
   if (qs('#dlExternalDownloader')) qs('#dlExternalDownloader').value = '';
   qsa('.dlsb-remove').forEach(c => { c.checked = false; });
   qsa('.dlsb-mark').forEach(c => { c.checked = false; });
-
-  // Network
   if (qs('#dlProxy')) qs('#dlProxy').value = s.proxy || '';
   if (qs('#dlCookiesBrowser')) qs('#dlCookiesBrowser').value = s.cookiesFromBrowser || '';
   if (qs('#dlForceIPv4')) qs('#dlForceIPv4').checked = !!s.forceIPv4;
   if (qs('#dlForceIPv6')) qs('#dlForceIPv6').checked = !!s.forceIPv6;
-
-  // Post-processing
   if (qs('#dlWriteSubs')) qs('#dlWriteSubs').checked = !!s.writeSubs;
   if (qs('#dlWriteAutoSubs')) qs('#dlWriteAutoSubs').checked = !!s.writeAutoSubs;
   if (qs('#dlEmbedSubs')) qs('#dlEmbedSubs').checked = !!s.embedSubs;
@@ -662,10 +612,7 @@ function openAnalyzeModal(data) {
   if (qs('#dlAddChapters')) qs('#dlAddChapters').checked = !!s.addChapters;
   if (qs('#dlWriteThumbnail')) qs('#dlWriteThumbnail').checked = !!s.writeThumbnail;
 
-  // Switch to first modal tab
   switchModalTab('basic');
-
-  // Show modal
   qs('#modalOverlay').style.display = 'flex';
 }
 
@@ -689,13 +636,10 @@ function switchModalTab(tab) {
 function collectAdvancedOptions() {
   const waitForVideoRaw = qs('#dlWaitForVideo') ? parseInt(qs('#dlWaitForVideo').value) : NaN;
   return {
-    // Basic
     audioFormat: qs('#dlAudioFmt').value,
     playlistItems: qs('#dlPlaylistItems').value.trim(),
     noPlaylist: qs('#dlNoPlaylist').checked,
     playlistRandom: qs('#dlPlaylistRandom').checked,
-
-    // Advanced
     downloadSections: qs('#dlSections').value.trim(),
     outputTemplate: qs('#dlOutputTemplate').value.trim(),
     downloadArchive: qs('#dlArchive').value.trim(),
@@ -704,14 +648,10 @@ function collectAdvancedOptions() {
     liveFromStart: qs('#dlLiveFromStart').checked,
     waitForVideo: (!isNaN(waitForVideoRaw) && waitForVideoRaw > 0) ? waitForVideoRaw : undefined,
     externalDownloader: qs('#dlExternalDownloader') ? qs('#dlExternalDownloader').value : '',
-
-    // Network (per-download override)
     proxy: qs('#dlProxy').value.trim(),
     cookiesFromBrowser: qs('#dlCookiesBrowser').value,
     forceIPv4: qs('#dlForceIPv4').checked,
     forceIPv6: qs('#dlForceIPv6').checked,
-
-    // Post-processing
     writeSubs: qs('#dlWriteSubs').checked,
     writeAutoSubs: qs('#dlWriteAutoSubs').checked,
     embedSubs: qs('#dlEmbedSubs').checked,
@@ -721,8 +661,6 @@ function collectAdvancedOptions() {
     embedMetadata: qs('#dlEmbedMetadata').checked,
     addChapters: qs('#dlAddChapters').checked,
     writeThumbnail: qs('#dlWriteThumbnail').checked,
-
-    // SponsorBlock
     sponsorBlockRemove: qsa('.dlsb-remove:checked').map(c => c.value),
     sponsorBlockMark: qsa('.dlsb-mark:checked').map(c => c.value),
   };
@@ -732,11 +670,12 @@ function collectAdvancedOptions() {
 
 qs('#urlForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const url = qs('#videoUrl').value.trim();
+  let url = qs('#videoUrl').value.trim();
   if (!url) return;
+
+  // Automatically prepend https:// if protocol is missing (e.g. user pasted 'youtube.com/...')
   if (!/^https?:\/\//i.test(url)) {
-    toast('Please enter a valid URL starting with http:// or https://', 'error');
-    return;
+    url = 'https://' + url;
   }
 
   const btn = qs('#analyzeBtn');
@@ -748,21 +687,10 @@ qs('#urlForm').addEventListener('submit', async (e) => {
   btnText.style.display = 'none';
 
   try {
-    const res = await fetch(API.analyze, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      toast(data.error || 'Failed to analyze URL', 'error', 5000);
-      return;
-    }
-
+    const data = await api.analyze(url);
     openAnalyzeModal({ ...data, inputUrl: url });
   } catch (err) {
-    toast('Network error — is the server running?', 'error');
+    toast(err.message || 'Failed to analyze URL', 'error', 5000);
   } finally {
     btn.disabled = false;
     spinner.style.display = 'none';
@@ -773,11 +701,11 @@ qs('#urlForm').addEventListener('submit', async (e) => {
 // Paste button
 qs('#pasteBtn').addEventListener('click', async () => {
   try {
-    const text = await navigator.clipboard.readText();
+    const text = await api.readClipboard();
     qs('#videoUrl').value = text;
     qs('#videoUrl').focus();
   } catch {
-    toast('Cannot access clipboard — paste manually', 'warning');
+    toast('Cannot access clipboard', 'warning');
   }
 });
 
@@ -794,29 +722,19 @@ qs('#startDlBtn').addEventListener('click', async () => {
   btn.textContent = 'Starting...';
 
   try {
-    const res = await fetch(API.download, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: currentAnalyzeResult.inputUrl || currentAnalyzeResult.url,
-        formatId,
-        title: currentAnalyzeResult.title || 'Unknown',
-        thumbnail: currentAnalyzeResult.thumbnail || '',
-        downloadPath: dlPath || undefined,
-        advancedOptions
-      })
+    await api.startDownload({
+      url: currentAnalyzeResult.inputUrl || currentAnalyzeResult.url,
+      formatId,
+      title: currentAnalyzeResult.title || 'Unknown',
+      thumbnail: currentAnalyzeResult.thumbnail || '',
+      downloadPath: dlPath || undefined,
+      advancedOptions
     });
-
-    const data = await res.json();
-    if (res.ok) {
-      closeModal();
-      qs('#videoUrl').value = '';
-      toast('Download started!', 'success');
-    } else {
-      toast(data.error || 'Failed to start download', 'error');
-    }
+    closeModal();
+    qs('#videoUrl').value = '';
+    toast('Download started!', 'success');
   } catch (err) {
-    toast('Network error', 'error');
+    toast(err.message || 'Failed to start download', 'error');
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Start Download`;
@@ -840,53 +758,45 @@ document.addEventListener('click', async (e) => {
   const id = btn.dataset.id;
   const filePath = btn.dataset.filepath;
 
-  if (action === 'open-file' || action === 'open-folder') {
+  if (action === 'open-file') {
     if (!filePath) { toast('File path not available', 'warning'); return; }
     try {
-      const res = await fetch(API.open, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath, type: action === 'open-folder' ? 'folder' : 'file' })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast(data.error || 'Failed to open item', 'error', 5000);
-      } else if (data.warning) {
-        toast(data.warning, 'info', 4000);
-      }
+      await api.openFile(filePath);
     } catch (err) {
-      toast('Failed to communicate with server', 'error');
+      toast(err.message || 'Failed to open file', 'error', 5000);
+    }
+    return;
+  }
+
+  if (action === 'open-folder') {
+    if (!filePath) { toast('File path not available', 'warning'); return; }
+    try {
+      await api.openFolder(filePath);
+    } catch (err) {
+      toast(err.message || 'Failed to open folder', 'error', 5000);
     }
     return;
   }
 
   if (['pause', 'resume', 'cancel', 'delete', 'retry'].includes(action) && id) {
-    await fetch(API.action, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action })
-    });
+    try {
+      await api.downloadAction(id, action);
+    } catch (err) {
+      toast(err.message || 'Action failed', 'error');
+    }
   }
 });
 
 // Bulk actions
-qs('#bulkPauseBtn').addEventListener('click', () => bulkAction('pause'));
-qs('#bulkResumeBtn').addEventListener('click', () => bulkAction('resume'));
-qs('#bulkCancelBtn').addEventListener('click', () => bulkAction('cancel'));
-
-async function bulkAction(action) {
-  await fetch(API.action, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: 'all', action })
-  });
-}
+qs('#bulkPauseBtn').addEventListener('click', () => api.downloadAction('all', 'pause'));
+qs('#bulkResumeBtn').addEventListener('click', () => api.downloadAction('all', 'resume'));
+qs('#bulkCancelBtn').addEventListener('click', () => api.downloadAction('all', 'cancel'));
 
 // ─── Clear History ────────────────────────────────────────────
 
 qs('#clearHistoryBtn').addEventListener('click', async () => {
   if (!confirm('Clear all download history?')) return;
-  await fetch(API.history, { method: 'DELETE' });
+  await api.clearHistory();
 });
 
 // ─── Settings Tab Navigation ──────────────────────────────────
@@ -909,7 +819,6 @@ function applyTheme(theme, mode) {
 }
 
 function applySettings(s) {
-  // Download
   if (s.downloadPath !== undefined) safeSet('sDownloadPath', s.downloadPath);
   if (s.speedLimit !== undefined) safeSetSelect('sSpeedLimit', s.speedLimit);
   if (s.concurrentFragments !== undefined) safeSet('sConcurrentFragments', s.concurrentFragments);
@@ -920,45 +829,36 @@ function applySettings(s) {
   if (s.audioQuality !== undefined) safeSet('sAudioQuality', s.audioQuality);
   if (s.noOverwrites !== undefined) safeCheck('sNoOverwrites', s.noOverwrites);
   if (s.continueDownload !== undefined) safeCheck('sContinueDownload', s.continueDownload);
-  // Network
   if (s.proxy !== undefined) safeSet('sProxy', s.proxy);
   if (s.socketTimeout !== undefined) safeSet('sSocketTimeout', s.socketTimeout);
   if (s.xffBypass !== undefined) safeSetSelect('sXffBypass', s.xffBypass);
   if (s.forceIPv4 !== undefined) safeCheck('sForceIPv4', s.forceIPv4);
   if (s.forceIPv6 !== undefined) safeCheck('sForceIPv6', s.forceIPv6);
-  // Subtitles
   if (s.writeSubs !== undefined) safeCheck('sWriteSubs', s.writeSubs);
   if (s.writeAutoSubs !== undefined) safeCheck('sWriteAutoSubs', s.writeAutoSubs);
   if (s.embedSubs !== undefined) safeCheck('sEmbedSubs', s.embedSubs);
   if (s.subLangs !== undefined) safeSet('sSubLangs', s.subLangs);
   if (s.subFormat !== undefined) safeSetSelect('sSubFormat', s.subFormat);
-  // Metadata
   if (s.embedThumbnail !== undefined) safeCheck('sEmbedThumbnail', s.embedThumbnail);
   if (s.embedMetadata !== undefined) safeCheck('sEmbedMetadata', s.embedMetadata);
   if (s.addChapters !== undefined) safeCheck('sAddChapters', s.addChapters);
   if (s.writeThumbnail !== undefined) safeCheck('sWriteThumbnail', s.writeThumbnail);
   if (s.writeInfoJson !== undefined) safeCheck('sWriteInfoJson', s.writeInfoJson);
-  // SponsorBlock
   if (s.sponsorBlockRemove) {
     qsa('.sb-remove-check').forEach(c => { c.checked = s.sponsorBlockRemove.includes(c.value); });
   }
   if (s.sponsorBlockMark) {
     qsa('.sb-mark-check').forEach(c => { c.checked = s.sponsorBlockMark.includes(c.value); });
   }
-  // Auth
   if (s.cookiesFromBrowser !== undefined) safeSetSelect('sCookiesBrowser', s.cookiesFromBrowser);
   if (s.username !== undefined) safeSet('sUsername', s.username);
-  // Advanced
   if (s.externalDownloader !== undefined) safeSetSelect('sExternalDownloader', s.externalDownloader);
-  // Theme & Mode
   if (s.theme !== undefined || s.themeMode !== undefined) {
     const t = s.theme || 'violet';
     const m = s.themeMode || 'light';
     applyTheme(t, m);
-    
     const themeRadio = qs(`input[name="themeRadio"][value="${t}"]`);
     if (themeRadio) themeRadio.checked = true;
-    
     const modeRadio = qs(`input[name="modeRadio"][value="${m}"]`);
     if (modeRadio) modeRadio.checked = true;
   }
@@ -977,7 +877,7 @@ function collectSettings() {
   return {
     downloadPath: qs('#sDownloadPath').value.trim(),
     speedLimit: qs('#sSpeedLimit').value,
-    concurrentFragments: parseInt(qs('#sConcurrentFragments').value) || 1,
+    concurrentFragments: parseInt(qs('#sConcurrentFragments').value) || 8,
     retries: parseInt(qs('#sRetries').value) || 10,
     maxConcurrentDownloads: parseInt(qs('#sMaxConcurrent').value) || 3,
     outputTemplate: qs('#sOutputTemplate').value.trim() || '%(title)s.%(ext)s',
@@ -985,34 +885,27 @@ function collectSettings() {
     audioQuality: qs('#sAudioQuality').value,
     noOverwrites: qs('#sNoOverwrites').checked,
     continueDownload: qs('#sContinueDownload').checked,
-    // Network
     proxy: qs('#sProxy').value.trim(),
     socketTimeout: parseInt(qs('#sSocketTimeout').value) || 30,
     xffBypass: qs('#sXffBypass').value,
     forceIPv4: qs('#sForceIPv4').checked,
     forceIPv6: qs('#sForceIPv6').checked,
-    // Subtitles
     writeSubs: qs('#sWriteSubs').checked,
     writeAutoSubs: qs('#sWriteAutoSubs').checked,
     embedSubs: qs('#sEmbedSubs').checked,
     subLangs: qs('#sSubLangs').value.trim() || 'en',
     subFormat: qs('#sSubFormat').value,
-    // Metadata
     embedThumbnail: qs('#sEmbedThumbnail').checked,
     embedMetadata: qs('#sEmbedMetadata').checked,
     addChapters: qs('#sAddChapters').checked,
     writeThumbnail: qs('#sWriteThumbnail').checked,
     writeInfoJson: qs('#sWriteInfoJson').checked,
-    // SponsorBlock
     sponsorBlockRemove: qsa('.sb-remove-check:checked').map(c => c.value),
     sponsorBlockMark: qsa('.sb-mark-check:checked').map(c => c.value),
-    // Auth
     cookiesFromBrowser: qs('#sCookiesBrowser').value,
     username: qs('#sUsername').value.trim(),
     password: qs('#sPassword').value,
-    // Advanced
     externalDownloader: qs('#sExternalDownloader') ? qs('#sExternalDownloader').value : 'native',
-    // Theme
     theme: qs('input[name="themeRadio"]:checked')?.value || 'violet',
     themeMode: qs('input[name="modeRadio"]:checked')?.value || 'light',
   };
@@ -1021,19 +914,11 @@ function collectSettings() {
 qs('#saveAllSettingsBtn').addEventListener('click', async () => {
   const s = collectSettings();
   try {
-    const res = await fetch(API.settings, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(s)
-    });
-    if (res.ok) {
-      toast('Settings saved!', 'success');
-      applyTheme(s.theme, s.themeMode);
-    } else {
-      toast('Failed to save settings', 'error');
-    }
+    await api.saveSettings(s);
+    toast('Settings saved!', 'success');
+    applyTheme(s.theme, s.themeMode);
   } catch {
-    toast('Network error', 'error');
+    toast('Failed to save settings', 'error');
   }
 });
 
@@ -1045,7 +930,6 @@ qsa('input[name="themeRadio"]').forEach(r => {
   });
 });
 
-// Mode picker live preview
 qsa('input[name="modeRadio"]').forEach(r => {
   r.addEventListener('change', () => {
     const activeTheme = qs('input[name="themeRadio"]:checked')?.value || 'violet';
@@ -1053,26 +937,45 @@ qsa('input[name="modeRadio"]').forEach(r => {
   });
 });
 
+// ─── Browse button for download path ──────────────────────────
+
+const browseBtn = qs('#browseDlPath');
+if (browseBtn) {
+  browseBtn.addEventListener('click', async () => {
+    const dir = await api.selectDirectory();
+    if (dir) qs('#dlPath').value = dir;
+  });
+}
+
+const browseSettingsBtn = qs('#browseSettingsPath');
+if (browseSettingsBtn) {
+  browseSettingsBtn.addEventListener('click', async () => {
+    const dir = await api.selectDirectory();
+    if (dir) qs('#sDownloadPath').value = dir;
+  });
+}
+
 // ─── yt-dlp Updater ───────────────────────────────────────────
 
 qs('#updateCoreBtn').addEventListener('click', async () => {
   const wrapper = qs('#updateProgressWrapper');
   const console_ = qs('#updateConsole');
   wrapper.style.display = '';
-  console_.textContent = 'Connecting to pip...\n';
+  console_.textContent = 'Starting yt-dlp update...\n';
+
+  // Listen for update log messages
+  const cleanup = api.onUpdateLog((data) => {
+    console_.textContent += data.text;
+    console_.scrollTop = console_.scrollHeight;
+  });
 
   try {
-    const res = await fetch(API.update, { method: 'POST' });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      console_.textContent += decoder.decode(value);
-      console_.scrollTop = console_.scrollHeight;
-    }
+    await api.updateYtdlp();
+    loadSysInfo();
   } catch (err) {
     console_.textContent += `\nError: ${err.message}`;
+  } finally {
+    cleanup();
   }
 });
 
@@ -1091,8 +994,7 @@ qs('#hamburgerBtn').addEventListener('click', () => {
 
 async function loadSysInfo() {
   try {
-    const res = await fetch(API.sysinfo);
-    const data = await res.json();
+    const data = await api.getSysInfo();
     qs('#sysYtdlp').textContent = data.ytdlp || '?';
     qs('#sysFfmpeg').textContent = data.ffmpeg ? (data.ffmpegVersion || 'OK') : 'Missing ⚠';
     qs('#sysFfmpeg').style.color = data.ffmpeg ? '#22c55e' : '#ef4444';
@@ -1116,53 +1018,81 @@ function hideSidebarUpdateLog() {
   qs('#sysUpdateLog').style.display = 'none';
 }
 
-async function runSidebarUpdate(btnEl, title, endpoint) {
+async function runSidebarUpdate(btnEl, type, title) {
   btnEl.disabled = true;
   btnEl.classList.add('spinning');
   showSidebarUpdateLog(title);
 
   const logEl = qs('#sysUpdateLogContent');
 
+  const cleanup = api.onUpdateLog((data) => {
+    logEl.textContent += data.text;
+    logEl.scrollTop = logEl.scrollHeight;
+  });
+
   try {
-    const res = await fetch(endpoint, { method: 'POST' });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      logEl.textContent += decoder.decode(value);
-      logEl.scrollTop = logEl.scrollHeight;
+    if (type === 'ytdlp') {
+      await api.updateYtdlp();
+    } else if (type === 'ffmpeg') {
+      await api.updateFfmpeg();
     }
-
-    // Reload sys info after update
     setTimeout(loadSysInfo, 1500);
     toast(`${title} complete!`, 'success');
   } catch (err) {
     logEl.textContent += `\nError: ${err.message}`;
     toast(`${title} failed`, 'error');
   } finally {
+    cleanup(); // Clean up event listener to prevent duplicates and memory leaks
     btnEl.disabled = false;
     btnEl.classList.remove('spinning');
   }
 }
 
 qs('#updateYtdlpBtn').addEventListener('click', () => {
-  runSidebarUpdate(qs('#updateYtdlpBtn'), 'Updating yt-dlp...', API.update);
+  runSidebarUpdate(qs('#updateYtdlpBtn'), 'ytdlp', 'Updating yt-dlp...');
 });
 
 qs('#updateFfmpegBtn').addEventListener('click', () => {
-  runSidebarUpdate(qs('#updateFfmpegBtn'), 'Updating ffmpeg...', '/api/update-ffmpeg');
+  runSidebarUpdate(qs('#updateFfmpegBtn'), 'ffmpeg', 'Updating FFmpeg...');
 });
 
 qs('#closeUpdateLog').addEventListener('click', hideSidebarUpdateLog);
 
+// ─── Window Controls (Custom Titlebar) ────────────────────────
+
+qs('#titlebarMinBtn')?.addEventListener('click', () => api.windowMinimize());
+qs('#titlebarMaxBtn')?.addEventListener('click', () => api.windowMaximize());
+qs('#titlebarCloseBtn')?.addEventListener('click', () => api.windowClose());
+
+// ─── External Links ───────────────────────────────────────────
+
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[href^="http"]');
+  if (link) {
+    e.preventDefault();
+    api.openExternal(link.href);
+  }
+});
+
 // ─── Init ─────────────────────────────────────────────────────
 
-function init() {
-  connectWS();
+async function init() {
+  setupIPCListeners();
   loadSysInfo();
   navigateTo('dashboard');
+
+  // Request initial data
+  try {
+    const data = await api.requestInitData();
+    appState.active = data.active || [];
+    appState.completed = data.completed || [];
+    if (data.settings) { appState.settings = data.settings; applySettings(data.settings); }
+    renderActiveDownloads();
+    renderCompletedDownloads();
+    updateStats();
+  } catch (err) {
+    console.error('Failed to get init data:', err);
+  }
 }
 
 init();

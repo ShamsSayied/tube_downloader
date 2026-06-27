@@ -1,16 +1,54 @@
 {
-  "name": "tube-download-manager",
-  "version": "1.0.0",
-  "description": "Tube Downloader — A modern media download manager powered by yt-dlp",
-  "main": "server.js",
+  "name": "tube-downloader",
+  "version": "2.0.0",
+  "description": "Tube Downloader — Standalone desktop media download manager powered by yt-dlp",
+  "main": "main.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "postinstall": "node scripts/download-binaries.js",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable",
+    "build:nsis": "electron-builder --win nsis"
   },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "ws": "^8.18.0"
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.naharsoft.tube-downloader",
+    "productName": "Tube Downloader",
+    "copyright": "Copyright © 2024 NaharSoft",
+    "win": {
+      "icon": "public/icon.ico",
+      "target": [
+        "portable"
+      ]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/",
+        "to": "bin/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico"
+    },
+    "portable": {
+      "artifactName": "TubeDownloader-Portable-${version}.${ext}"
+    }
   }
 }

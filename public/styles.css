@@ -122,6 +122,89 @@ body {
   line-height: 1.5;
 }
 
+/* ── Custom Titlebar (Electron frameless window) ─────────────── */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  user-select: none;
+}
+.titlebar-drag {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  flex: 1;
+  height: 100%;
+}
+.titlebar-icon {
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+.titlebar-icon img {
+  border-radius: 3px;
+}
+.titlebar-text {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+.titlebar-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+  height: 100%;
+}
+.titlebar-btn {
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.titlebar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.titlebar-btn-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* Offset all content below titlebar */
+.bg-glow { top: 32px; }
+.app-layout { padding-top: 32px; }
+
+/* ── Input with Button Layout ────────────────────────────────── */
+.input-with-btn {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.input-with-btn .form-control {
+  flex: 1;
+}
+.input-with-btn .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── Ambient Background ──────────────────────────────────────── */
 .bg-glow {
   position: fixed;
@@ -151,7 +234,7 @@ body {
 .app-layout {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
-  height: 100vh;
+  height: calc(100vh - 32px);
   position: relative;
   z-index: 1;
 }
