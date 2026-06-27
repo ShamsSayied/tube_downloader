@@ -145,6 +145,7 @@ function saveSettings() {
 
 const activeDownloads = {};
 let mainWindow = null;
+let splashWindow = null;
 
 // ─── Broadcast to Renderer ────────────────────────────────────────────────────
 
@@ -1180,6 +1181,38 @@ function broadcastFullState() {
   });
 }
 
+// ─── Create Splash Window ─────────────────────────────────────────────────────
+
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 420,
+    height: 280,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    icon: path.join(__dirname, 'public', 'icon.png'),
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  splashWindow.loadFile(path.join(__dirname, 'public', 'splash.html'));
+
+  splashWindow.on('closed', () => {
+    splashWindow = null;
+  });
+}
+
+function updateSplashStatus(text) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('splash-status', text);
+  }
+}
+
 // ─── Create Main Window ───────────────────────────────────────────────────────
 
 function createWindow() {
@@ -1204,7 +1237,15 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    updateSplashStatus('Ready!');
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+      }
+    }, 400);
   });
 
   // Track maximize/unmaximize state for custom titlebar
@@ -1236,9 +1277,17 @@ function createWindow() {
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
-  initStorage();
-  setupIPC();
-  createWindow();
+  createSplashWindow();
+  setTimeout(() => {
+    updateSplashStatus('Loading user preferences & history...');
+    initStorage();
+    setupIPC();
+    updateSplashStatus('Checking media engine binaries...');
+    setTimeout(() => {
+      updateSplashStatus('Starting user interface...');
+      createWindow();
+    }, 300);
+  }, 300);
 });
 
 app.on('window-all-closed', () => {

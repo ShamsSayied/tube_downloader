@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loading Tube Downloader...</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f0f14;
+      color: #f0f4ff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      position: relative;
+    }
+    .bg-glow {
+      position: absolute;
+      width: 250px;
+      height: 250px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.35) 0%, rgba(0, 0, 0, 0) 70%);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 0;
+      pointer-events: none;
+    }
+    .splash-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .logo-container {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      margin-bottom: 16px;
+    }
+    .logo-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 24px rgba(139, 92, 246, 0.4));
+    }
+    .app-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+    }
+    .app-subtitle {
+      font-size: 12px;
+      color: rgba(160, 175, 210, 0.7);
+      margin-bottom: 24px;
+      font-weight: 500;
+    }
+    .loader-bar-container {
+      width: 240px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      margin-bottom: 14px;
+    }
+    .loader-bar-progress {
+      position: absolute;
+      left: -50%;
+      height: 100%;
+      width: 50%;
+      background: linear-gradient(90deg, #8b5cf6, #ec4899, #8b5cf6);
+      border-radius: 4px;
+      animation: loading-pulse 1.5s infinite ease-in-out;
+    }
+    @keyframes loading-pulse {
+      0% { left: -50%; width: 30%; }
+      50% { left: 35%; width: 60%; }
+      100% { left: 100%; width: 30%; }
+    }
+    .status-text {
+      font-size: 11px;
+      color: #94a3b8;
+      height: 16px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-glow"></div>
+  <div class="splash-content">
+    <div class="logo-container">
+      <img src="icon.png" alt="Tube Downloader Logo">
+    </div>
+    <div class="app-title">Tube Downloader</div>
+    <div class="app-subtitle">Standalone Media Manager</div>
+    
+    <div class="loader-bar-container">
+      <div class="loader-bar-progress"></div>
+    </div>
+    
+    <div class="status-text" id="statusText">Initializing application runtime...</div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    ipcRenderer.on('splash-status', (_event, text) => {
+      const el = document.getElementById('statusText');
+      if (el) el.textContent = text;
+    });
+  </script>
+</body>
+</html>
