@@ -62,7 +62,7 @@ let SETTINGS_FILE;
 let completedDownloads = [];
 
 const DEFAULT_SETTINGS = {
-  downloadPath: path.join(os.homedir(), 'Downloads'),
+  downloadPath: path.join(os.homedir(), 'Downloads', 'Videos'),
   maxConcurrentDownloads: 3,
   defaultFormat: 'bestvideo+bestaudio/best',
   speedLimit: 'unlimited',
@@ -118,7 +118,12 @@ function initStorage() {
   // Load settings
   if (fs.existsSync(SETTINGS_FILE)) {
     try {
-      settings = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) };
+      const loaded = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+      // If user had old default 'Downloads', migrate to 'Downloads/Videos'
+      if (loaded.downloadPath === path.join(os.homedir(), 'Downloads')) {
+        loaded.downloadPath = DEFAULT_SETTINGS.downloadPath;
+      }
+      settings = { ...DEFAULT_SETTINGS, ...loaded };
     } catch (e) {
       console.error('Error reading settings.json:', e);
     }
@@ -193,12 +198,17 @@ function buildYtDlpArgs(dl) {
   const outputTemplate = opts.outputTemplate || settings.outputTemplate || '%(title)s.%(ext)s';
   const downloadPath = dl.downloadPath;
 
+  // Dynamically cap filename length to stay under Windows MAX_PATH (260 chars).
+  // Reserves space for: path separator, extension (.mp4), and yt-dlp temp suffixes (.f251.webm.part ≈ 20 chars)
+  const maxFilenameLen = Math.max(80, 230 - downloadPath.length);
+
   const args = [
     '--newline',
     '--progress-template',
     'download-progress:%(progress._percent_str)s speed:%(progress._speed_str)s eta:%(progress._eta_str)s size:%(progress._total_bytes_str)s',
     '--ffmpeg-location', path.dirname(FFMPEG_PATH),
     '--windows-filenames',
+    '--trim-filenames', String(maxFilenameLen),
   ];
 
   // Format
@@ -401,6 +411,15 @@ function startYtDlpProcess(id) {
     dl.status = 'queued';
     throttleBroadcast(id, true);
     return;
+  }
+
+  // Always check whether the target folder exists before saving; create it automatically if not
+  if (dl.downloadPath && !fs.existsSync(dl.downloadPath)) {
+    try {
+      fs.mkdirSync(dl.downloadPath, { recursive: true });
+    } catch (e) {
+      console.error(`Cannot create download folder: ${dl.downloadPath}`, e);
+    }
   }
 
   const args = buildYtDlpArgs(dl);
