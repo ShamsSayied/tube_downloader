@@ -198,6 +198,7 @@ function buildYtDlpArgs(dl) {
     '--progress-template',
     'download-progress:%(progress._percent_str)s speed:%(progress._speed_str)s eta:%(progress._eta_str)s size:%(progress._total_bytes_str)s',
     '--ffmpeg-location', path.dirname(FFMPEG_PATH),
+    '--windows-filenames',
   ];
 
   // Format
