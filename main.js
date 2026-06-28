@@ -195,20 +195,22 @@ function throttleBroadcast(id, force = false) {
 function buildYtDlpArgs(dl) {
   const opts = dl.advancedOptions || {};
   const isAudioExtract = dl.format === 'bestaudio/best';
-  const outputTemplate = opts.outputTemplate || settings.outputTemplate || '%(title)s.%(ext)s';
+  let outputTemplate = opts.outputTemplate || settings.outputTemplate || '%(title)s.%(ext)s';
+  // Ensure title in template is capped to 100 bytes to prevent Windows MAX_PATH overflows on long titles (e.g. Facebook post texts)
+  if (outputTemplate.includes('%(title)s')) {
+    outputTemplate = outputTemplate.replace('%(title)s', '%(title).100B');
+  }
   const downloadPath = dl.downloadPath;
 
-  // Dynamically cap filename length to stay under Windows MAX_PATH (260 chars).
-  // Reserves space for: path separator, extension (.mp4), and yt-dlp temp suffixes (.f251.webm.part ≈ 20 chars)
-  const maxFilenameLen = Math.max(80, 230 - downloadPath.length);
-
+  // Pass directory path via -P so --trim-filenames only applies to the filename template passed via -o
   const args = [
     '--newline',
     '--progress-template',
     'download-progress:%(progress._percent_str)s speed:%(progress._speed_str)s eta:%(progress._eta_str)s size:%(progress._total_bytes_str)s',
     '--ffmpeg-location', path.dirname(FFMPEG_PATH),
+    '-P', downloadPath,
     '--windows-filenames',
-    '--trim-filenames', String(maxFilenameLen),
+    '--trim-filenames', '120',
   ];
 
   // Format
@@ -359,11 +361,11 @@ function buildYtDlpArgs(dl) {
     const audioFmt = opts.audioFormat || settings.audioFormat || 'mp3';
     const audioQuality = opts.audioQuality || settings.audioQuality || '5';
     args.push('--extract-audio', '--audio-format', audioFmt, '--audio-quality', audioQuality);
-    args.push('-o', path.join(downloadPath, outputTemplate));
+    args.push('-o', outputTemplate);
   } else {
     args.push('--merge-output-format', 'mp4');
     args.push('--remux-video', 'mp4');
-    args.push('-o', path.join(downloadPath, outputTemplate));
+    args.push('-o', outputTemplate);
   }
 
   // External downloader
