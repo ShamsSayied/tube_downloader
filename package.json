@@ -1,6 +1,6 @@
 {
   "name": "tube-downloader",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Tube Downloader — Standalone desktop media download manager powered by yt-dlp",
   "main": "main.js",
   "type": "commonjs",

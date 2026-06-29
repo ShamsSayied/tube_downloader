@@ -344,7 +344,8 @@ function activeCardHTML(dl) {
   if (dl.status === 'failed') statusLabel = 'Failed';
   if (dl.status === 'merging') statusLabel = 'Merging Streams';
   if (dl.status === 'extracting') statusLabel = 'Extracting Audio';
-  if (dl.status === 'processing' || isCutting) statusLabel = 'Cutting Section';
+  if (dl.status === 'processing') statusLabel = 'Finalizing';
+  if (isCutting) statusLabel = 'Clipping Section';
 
   const canPause = dl.status === 'downloading' || dl.status === 'queued';
   const canResume = dl.status === 'paused';
@@ -446,7 +447,8 @@ function updateActiveCard(dl) {
   if (dl.status === 'failed') statusLabel = 'Failed';
   if (dl.status === 'merging') statusLabel = 'Merging Streams';
   if (dl.status === 'extracting') statusLabel = 'Extracting Audio';
-  if (dl.status === 'processing' || isCutting) statusLabel = 'Cutting Section';
+  if (dl.status === 'processing') statusLabel = 'Finalizing';
+  if (isCutting) statusLabel = 'Clipping Section';
 
   if (chip) {
     chip.className = `status-chip ${dl.status} ${isCutting ? 'processing' : ''}`;
@@ -776,6 +778,130 @@ function setupTimeClipperEvents() {
 
 // ─── Download Config Modal ────────────────────────────────────
 
+function initPlaylistPicker(data) {
+  const playlistChoiceGroup = qs('#playlistChoiceGroup');
+  const playlistPickerContainer = qs('#playlistPickerContainer');
+  const playlistPickerList = qs('#playlistPickerList');
+  const selectedVideoCount = qs('#selectedVideoCount');
+
+  if (!playlistChoiceGroup) return;
+
+  if (data.type !== 'playlist') {
+    playlistChoiceGroup.style.display = 'none';
+    if (playlistPickerContainer) playlistPickerContainer.style.display = 'none';
+    return;
+  }
+
+  playlistChoiceGroup.style.display = '';
+  const countText = qs('#choicePlaylistCountText');
+  if (countText) {
+    countText.textContent = data.videoCount ? `All ${data.videoCount} videos` : 'All videos';
+  }
+
+  const btnChoicePlaylist = qs('#btnChoicePlaylist');
+  const btnChoiceSelect = qs('#btnChoiceSelect');
+  const btnChoiceSingle = qs('#btnChoiceSingle');
+
+  // Reset cards active state to default (Entire Playlist)
+  if (btnChoicePlaylist) btnChoicePlaylist.classList.add('active');
+  if (btnChoiceSelect) btnChoiceSelect.classList.remove('active');
+  if (btnChoiceSingle) btnChoiceSingle.classList.remove('active');
+  if (playlistPickerContainer) playlistPickerContainer.style.display = 'none';
+
+  // Populate checklist
+  if (playlistPickerList) {
+    playlistPickerList.innerHTML = '';
+    const entries = (data.entries && data.entries.length)
+      ? data.entries
+      : Array.from({ length: data.videoCount || 0 }, (_, i) => ({ index: i + 1, title: `Video ${i + 1}` }));
+
+    entries.forEach(entry => {
+      const label = document.createElement('label');
+      label.className = 'playlist-picker-item';
+      label.innerHTML = `
+        <input type="checkbox" class="pl-item-check" data-idx="${entry.index}" checked>
+        <span class="playlist-picker-num">#${entry.index}</span>
+        <span class="playlist-picker-title" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</span>
+      `;
+      playlistPickerList.appendChild(label);
+    });
+
+    const syncPlaylistItemsVal = () => {
+      const checkedBoxes = qsa('.pl-item-check:checked');
+      if (selectedVideoCount) selectedVideoCount.textContent = checkedBoxes.length;
+      
+      if (checkedBoxes.length === 0) {
+        if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = 'none';
+      } else if (checkedBoxes.length === entries.length) {
+        if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = `1-${entries.length}`;
+      } else {
+        const indexes = checkedBoxes.map(cb => parseInt(cb.dataset.idx)).sort((a,b) => a - b);
+        let ranges = [];
+        let start = null, prev = null;
+        for (let i = 0; i < indexes.length; i++) {
+          let curr = indexes[i];
+          if (start === null) { start = curr; prev = curr; }
+          else if (curr === prev + 1) { prev = curr; }
+          else {
+            ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+            start = curr; prev = curr;
+          }
+        }
+        if (start !== null) ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+        if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = ranges.join(',');
+      }
+    };
+
+    playlistPickerList.onchange = syncPlaylistItemsVal;
+    syncPlaylistItemsVal();
+
+    if (qs('#btnSelectAllVideos')) {
+      qs('#btnSelectAllVideos').onclick = () => {
+        qsa('.pl-item-check').forEach(cb => cb.checked = true);
+        syncPlaylistItemsVal();
+      };
+    }
+    if (qs('#btnDeselectAllVideos')) {
+      qs('#btnDeselectAllVideos').onclick = () => {
+        qsa('.pl-item-check').forEach(cb => cb.checked = false);
+        syncPlaylistItemsVal();
+      };
+    }
+  }
+
+  // Cards click handlers
+  if (btnChoicePlaylist) {
+    btnChoicePlaylist.onclick = () => {
+      btnChoicePlaylist.classList.add('active');
+      if (btnChoiceSelect) btnChoiceSelect.classList.remove('active');
+      if (btnChoiceSingle) btnChoiceSingle.classList.remove('active');
+      if (playlistPickerContainer) playlistPickerContainer.style.display = 'none';
+      if (qs('#dlNoPlaylist')) qs('#dlNoPlaylist').checked = false;
+      if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = '';
+    };
+  }
+  if (btnChoiceSelect) {
+    btnChoiceSelect.onclick = () => {
+      btnChoiceSelect.classList.add('active');
+      if (btnChoicePlaylist) btnChoicePlaylist.classList.remove('active');
+      if (btnChoiceSingle) btnChoiceSingle.classList.remove('active');
+      if (playlistPickerContainer) playlistPickerContainer.style.display = '';
+      if (qs('#dlNoPlaylist')) qs('#dlNoPlaylist').checked = false;
+      syncPlaylistItemsVal();
+    };
+  }
+  if (btnChoiceSingle) {
+    btnChoiceSingle.onclick = () => {
+      btnChoiceSingle.classList.add('active');
+      if (btnChoicePlaylist) btnChoicePlaylist.classList.remove('active');
+      if (btnChoiceSelect) btnChoiceSelect.classList.remove('active');
+      if (playlistPickerContainer) playlistPickerContainer.style.display = 'none';
+      if (qs('#dlNoPlaylist')) qs('#dlNoPlaylist').checked = true;
+      if (qs('#dlPlaylistItems')) qs('#dlPlaylistItems').value = '';
+    };
+  }
+}
+
 function openAnalyzeModal(data) {
   currentAnalyzeResult = data;
 
@@ -813,6 +939,8 @@ function openAnalyzeModal(data) {
   updateFormatUI();
 
   qs('#playlistOptionsGroup').style.display = data.type === 'playlist' ? '' : 'none';
+  initPlaylistPicker(data);
+
   qs('#dlPath').value = appState.settings.downloadPath || '';
 
   const s = appState.settings || {};
@@ -947,6 +1075,16 @@ qs('#pasteBtn').addEventListener('click', async () => {
 // Start download
 qs('#startDlBtn').addEventListener('click', async () => {
   if (!currentAnalyzeResult) return;
+
+  // Validation for Playlist Select Mode
+  const btnChoiceSelect = qs('#btnChoiceSelect');
+  if (currentAnalyzeResult.type === 'playlist' && btnChoiceSelect && btnChoiceSelect.classList.contains('active')) {
+    const checkedBoxes = qsa('.pl-item-check:checked');
+    if (checkedBoxes.length === 0) {
+      toast('Please select at least 1 video from the checklist to download', 'warning');
+      return;
+    }
+  }
 
   const formatId = qs('#dlFormat').value;
   const dlPath = qs('#dlPath').value.trim();

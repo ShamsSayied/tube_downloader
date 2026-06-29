@@ -364,7 +364,9 @@ function buildYtDlpArgs(dl) {
     args.push('-o', outputTemplate);
   } else {
     args.push('--merge-output-format', 'mp4');
-    args.push('--remux-video', 'mp4');
+    if (opts.downloadSections && opts.downloadSections.trim()) {
+      args.push('--remux-video', 'mp4');
+    }
     args.push('-o', outputTemplate);
   }
 
@@ -604,12 +606,19 @@ function setupIPC() {
               const firstEntry = info.entries[0];
               playlistThumb = firstEntry.thumbnail || (firstEntry.thumbnails && firstEntry.thumbnails.length ? firstEntry.thumbnails[firstEntry.thumbnails.length - 1].url : '') || '';
             }
+            const entries = (info.entries || []).map((e, idx) => ({
+              index: idx + 1,
+              title: e.title || `Video ${idx + 1}`,
+              id: e.id || ''
+            }));
+
             return resolve({
               type: 'playlist',
               title: info.title || 'Playlist',
               thumbnail: playlistThumb,
               channel: info.uploader || info.channel || info.author || 'Playlist',
-              videoCount: info.entries ? info.entries.length : 0,
+              videoCount: entries.length,
+              entries,
               url
             });
           }
