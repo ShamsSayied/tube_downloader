@@ -347,17 +347,22 @@ function activeCardHTML(dl) {
   if (dl.status === 'processing') statusLabel = 'Finalizing';
   if (isCutting) statusLabel = 'Clipping Section';
 
+  if (dl.playlistCurrent && dl.playlistTotal) {
+    statusLabel += ` (${dl.playlistCurrent}/${dl.playlistTotal})`;
+  }
+
   const canPause = dl.status === 'downloading' || dl.status === 'queued';
   const canResume = dl.status === 'paused';
   const canRetry = dl.status === 'failed';
   const pct = Math.min(100, dl.progress || 0).toFixed(1);
   const isAnimated = dl.status === 'downloading' || isProcessing;
 
-  let processingMsg = 'Processing media... Please wait.';
-  if (isCutting) processingMsg = 'Clipping video section with FFmpeg... Please wait.';
-  else if (dl.status === 'merging') processingMsg = 'Merging audio & video streams into high quality container...';
-  else if (dl.status === 'extracting') processingMsg = 'Extracting and converting audio track...';
-  else if (dl.status === 'processing') processingMsg = 'Finalizing media metadata & chapter structures...';
+  const playlistSuffix = (dl.playlistCurrent && dl.playlistTotal) ? ` (Video ${dl.playlistCurrent} of ${dl.playlistTotal})` : '';
+  let processingMsg = `Processing media... Please wait.${playlistSuffix}`;
+  if (isCutting) processingMsg = `Clipping video section with FFmpeg... Please wait.${playlistSuffix}`;
+  else if (dl.status === 'merging') processingMsg = `Merging audio & video streams into high quality container...${playlistSuffix}`;
+  else if (dl.status === 'extracting') processingMsg = `Extracting and converting audio track...${playlistSuffix}`;
+  else if (dl.status === 'processing') processingMsg = `Finalizing media metadata & chapter structures...${playlistSuffix}`;
 
   return `
     <div class="download-card-header">
@@ -450,6 +455,10 @@ function updateActiveCard(dl) {
   if (dl.status === 'processing') statusLabel = 'Finalizing';
   if (isCutting) statusLabel = 'Clipping Section';
 
+  if (dl.playlistCurrent && dl.playlistTotal) {
+    statusLabel += ` (${dl.playlistCurrent}/${dl.playlistTotal})`;
+  }
+
   if (chip) {
     chip.className = `status-chip ${dl.status} ${isCutting ? 'processing' : ''}`;
     chip.textContent = statusLabel;
@@ -461,11 +470,12 @@ function updateActiveCard(dl) {
     pban.style.display = isProcessing ? 'flex' : 'none';
   }
   if (pmsg && isProcessing) {
-    let msg = 'Processing media... Please wait.';
-    if (isCutting) msg = 'Clipping video section with FFmpeg... Please wait.';
-    else if (dl.status === 'merging') msg = 'Merging audio & video streams into high quality container...';
-    else if (dl.status === 'extracting') msg = 'Extracting and converting audio track...';
-    else if (dl.status === 'processing') msg = 'Finalizing media metadata & chapter structures...';
+    const playlistSuffix = (dl.playlistCurrent && dl.playlistTotal) ? ` (Video ${dl.playlistCurrent} of ${dl.playlistTotal})` : '';
+    let msg = `Processing media... Please wait.${playlistSuffix}`;
+    if (isCutting) msg = `Clipping video section with FFmpeg... Please wait.${playlistSuffix}`;
+    else if (dl.status === 'merging') msg = `Merging audio & video streams into high quality container...${playlistSuffix}`;
+    else if (dl.status === 'extracting') msg = `Extracting and converting audio track...${playlistSuffix}`;
+    else if (dl.status === 'processing') msg = `Finalizing media metadata & chapter structures...${playlistSuffix}`;
     pmsg.textContent = msg;
   }
 

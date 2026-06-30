@@ -8,7 +8,7 @@ const files = fs.readdirSync(distDir);
 files.forEach(file => {
   if (file.endsWith('.zip')) {
     const oldPath = path.join(distDir, file);
-    const newPath = path.join(distDir, 'TubeDownloader-Portable-2.1.0.zip');
+    const newPath = path.join(distDir, 'TubeDownloader-Portable-2.2.0.zip');
     if (oldPath !== newPath) {
       if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
       fs.renameSync(oldPath, newPath);

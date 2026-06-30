@@ -177,7 +177,9 @@ function serializeDownload(id) {
     downloadPath: dl.downloadPath,
     filePath: dl.filePath,
     error: dl.error,
-    advancedOptions: dl.advancedOptions
+    advancedOptions: dl.advancedOptions,
+    playlistCurrent: dl.playlistCurrent,
+    playlistTotal: dl.playlistTotal
   };
 }
 
@@ -469,14 +471,31 @@ function startYtDlpProcess(id) {
           dl.speed = (!match[2] || match[2] === 'Unknown' || match[2] === 'NA') ? 'Calculating...' : match[2];
           dl.eta = (!match[3] || match[3] === 'Unknown' || match[3] === 'NA') ? '--:--' : match[3];
           if (match[4] && match[4] !== 'NA' && match[4] !== 'Unknown') dl.totalSize = match[4];
+          if (['merging', 'processing', 'extracting'].includes(dl.status)) {
+            dl.status = 'downloading';
+          }
           throttleBroadcast(id);
+        }
+      } else if (trimmed.includes('[download] Downloading item')) {
+        const match = trimmed.match(/\[download\] Downloading item\s*(\d+)\s*of\s*(\d+)/);
+        if (match) {
+          dl.playlistCurrent = parseInt(match[1]);
+          dl.playlistTotal = parseInt(match[2]);
+          dl.status = 'downloading';
+          throttleBroadcast(id, true);
         }
       } else if (trimmed.includes('[download] Destination:')) {
         const m = trimmed.match(/\[download\] Destination:\s*(.*)/);
         if (m) dl.filePath = m[1].trim();
+        if (['merging', 'processing', 'extracting'].includes(dl.status)) {
+          dl.status = 'downloading';
+        }
       } else if (trimmed.includes('has already been downloaded')) {
         const m = trimmed.match(/\[download\]\s*(.*)\s*has already been downloaded/);
         if (m) { dl.filePath = m[1].trim(); dl.progress = 100; }
+        if (['merging', 'processing', 'extracting'].includes(dl.status)) {
+          dl.status = 'downloading';
+        }
       } else if (trimmed.includes('[Merger] Merging formats into')) {
         const m = trimmed.match(/\[Merger\] Merging formats into\s*"(.*)"/);
         if (m) dl.filePath = m[1].trim();
@@ -732,7 +751,9 @@ function setupIPC() {
       filePath: '',
       error: null,
       process: null,
-      advancedOptions: advancedOptions || {}
+      advancedOptions: advancedOptions || {},
+      playlistCurrent: null,
+      playlistTotal: null
     };
 
     startYtDlpProcess(downloadId);
